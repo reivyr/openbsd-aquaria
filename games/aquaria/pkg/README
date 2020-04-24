@@ -1,0 +1,32 @@
+$OpenBSD: README$
+
++-------------------------------------------------------------------------------
+| Running ${PKGSTEM} on OpenBSD
++-------------------------------------------------------------------------------
+
+Aquaria
+=======
+
+To play Aquaria you need the original game assets purshased from GOG or Steam
+or Humble Bundle. After buy it, you can use gogrepo or depotdownloader for
+GOG or Steam respectively to download the game to your computer.
+
+After that, you should create a symlink in your game directory:
+$ cd /path/to/game
+$ ln -s ${PREFIX}/share/${PKGSTEM}/files override
+
+You can start aquaria normally if you are in the game directory, otherwise
+you need to setup an env. variable first:
+$ export AQUARIA_DATA_PATH=/path/to/game
+
+If you have problems with full screen mode (this is the default mode) you
+can disable it by adding <ScreenMode full="0" /> in the <Video> section of
+the file $HOME/.Aquaria/preferences/usersettings.xml
+
+Mods
+----
+If you want to play the default mods you need to do this after you have
+$HOME/.Aquaria (created when you play the first time):
+$ cp -R ${PREFIX}/share/${PKGSTEM}/game_scripts/_mods/* $HOME/.Aquaria/_mods
+
+You can download other mods from the game menu.

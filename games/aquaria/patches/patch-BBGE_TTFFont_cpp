@@ -1,0 +1,26 @@
+$OpenBSD$
+
+Fix base-clang/ports-gcc build. Context:
+https://github.com/AquariaOSE/Aquaria/pull/54
+
+Index: BBGE/TTFFont.cpp
+--- BBGE/TTFFont.cpp.orig
++++ BBGE/TTFFont.cpp
+@@ -20,16 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston,
+ */
+ 
+ #include "TTFFont.h"
+-
+-#ifdef AQUARIA_INTERNAL_FTGL
+-#include <ft2build.h>
+-#include FT_FREETYPE_H
+-
+-#include "FTGL.h"
+-#include "FTGLTextureFont.h"
+-#else
+-#include <FTGL/ftgl.h>
+-#endif
++#include "RenderBase.h"
+ 
+ #undef min
+ #undef max

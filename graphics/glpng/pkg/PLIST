@@ -1,0 +1,11 @@
+@comment $OpenBSD: PLIST,v 1.4 2015/03/16 18:07:46 naddy Exp $
+include/GL/
+include/GL/glpng.h
+@static-lib lib/libglpng.a
+@lib lib/libglpng.so.${LIBglpng_VERSION}
+share/cmake/
+share/cmake/Modules/
+share/cmake/Modules/FindGLPNG.cmake
+share/doc/glpng/
+share/doc/glpng/glpng.htm
+share/doc/glpng/glpng.html

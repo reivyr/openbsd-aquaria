@@ -1,0 +1,1263 @@
+Index: Makefile
+===================================================================
+RCS file: /cvs/mystuff/games/aquaria/Makefile,v
+retrieving revision 1.2
+diff -u -p -r1.2 Makefile
+--- Makefile	5 Oct 2019 04:12:27 -0000	1.2
++++ Makefile	23 Apr 2020 20:46:59 -0000
+@@ -1,23 +1,21 @@
+ # $OpenBSD: Makefile.template,v 1.77 2018/02/09 17:08:33 sthen Exp $
+ 
+ # TODO:
+-# - needs instructions on getting game data
+-# - add lua and sdl1.2 dependencies
+-# - check that bundled libs of lua, libogg, libvorbis are not used
+ # AQUARIA_DEFAULT_DATA_DIR:STRING=
+ # AQUARIA_DEMO_BUILD:BOOL=OFF
+ # AQUARIA_EXTRA_DATA_DIR:STRING=
+ # right now needs AQUARIA_DATA_PATH to be set
+-# troubleshoot keyboard controls - right now it only recognizes the left mouse button, and I can't even open up the menu
++# needs graphics/glpng update to be recognized by cmake
++# XInput/DInput joystick not recognized
+ 
+ COMMENT =	open-source fork of aquaria, an underwater action game
+ 
+-V = 20160619
++V = 1.2.20190905
+ DISTNAME =	aquaria-${V}
+ 
+ GH_ACCOUNT =	AquariaOSE
+ GH_PROJECT =	Aquaria
+-GH_COMMIT =	84366ad533fb42d00f6645052b9e56f693b81a2c
++GH_COMMIT =	988db94b729b2867cedd246493a0234c561516c8
+ 
+ # for libtool- or cmake-based ports, have a look at WRKBUILD/shared_libs.log
+ #SHARED_LIBS =	???
+@@ -29,18 +27,24 @@ MAINTAINER =	Thomas Frohwein <frohwein@y
+ #GPLv2
+ PERMIT_PACKAGE =	Yes
+ 
+-#WANTLIB =		???
++COMPILER = base-clang ports-gcc
+ 
+-MODULES =	devel/cmake
+-#BUILD_DEPENDS =	???
++WANTLIB += ${COMPILER_LIBCXX} SDL2 c m ogg openal png
++WANTLIB += tinyxml2 vorbis vorbisfile z
++WANTLIB += ftgl glpng
++WANTLIB += lua5.1
++
++MODULES =	devel/cmake \
++		lang/lua
+ #RUN_DEPENDS =		???
+ LIB_DEPENDS =	audio/openal \
+ 		audio/libvorbis \
+ 		audio/libogg \
+ 		devel/sdl2 \
+ 		graphics/png \
++		textproc/tinyxml2 \
+ 		graphics/ftgl \
+-		textproc/tinyxml2
++		graphics/glpng
+ 
+ #MAKE_FLAGS =		???
+ #MAKE_ENV =		???
+@@ -51,7 +55,7 @@ LIB_DEPENDS =	audio/openal \
+ #SEPARATE_BUILD =	flavored (distinct flavors may share a common WRKSRC)
+ #USE_GMAKE =		Yes
+ #USE_GROFF =		Yes
+-#CONFIGURE_STYLE =	
++#CONFIGURE_STYLE =
+ #CONFIGURE_SCRIPT =	??? (if other than configure)
+ CONFIGURE_ARGS =	-DAQUARIA_INTERNAL_FREETYPE=OFF \
+ 			-DAQUARIA_INTERNAL_LUA=OFF \
+@@ -60,7 +64,7 @@ CONFIGURE_ARGS =	-DAQUARIA_INTERNAL_FREE
+ 			-DAQUARIA_INTERNAL_ZLIB=OFF \
+ 			-DAQUARIA_USE_SDL2=ON \
+ 			-DAQUARIA_INTERNAL_FTGL=OFF \
+-			-DAQUARIA_INTERNAL_FTGL="~/.Aquaria/data"
++			-DAQUARIA_INTERNAL_GLPNG=OFF
+ #CONFIGURE_ENV =	???
+ 
+ #TEST_IS_INTERACTIVE =		Yes
+@@ -80,10 +84,15 @@ CONFIGURE_ARGS =	-DAQUARIA_INTERNAL_FREE
+ #INSTALL_TARGET =	???
+ #TEST_TARGET =		???
+ 
++AQUARIA_SHARE_DIR =	${PREFIX}/share/aquaria
++
+ post-extract:
+ 	rm ${WRKSRC}/ExternalLibs/SDL12/include/SDL_config.h.orig
+ 
+ do-install:
+-	${INSTALL_PROGRAM} ${WRKBUILD}/aquaria ${PREFIX}/bin	
++	${INSTALL_PROGRAM} ${WRKBUILD}/aquaria ${PREFIX}/bin
++	${INSTALL_DATA_DIR} ${AQUARIA_SHARE_DIR}
++	cp -Rp ${WRKSRC}/files ${WRKSRC}/game_scripts ${AQUARIA_SHARE_DIR}
++	chown -R ${SHAREOWN}:${SHAREGRP} ${AQUARIA_SHARE_DIR}
+ 
+ .include <bsd.port.mk>
+Index: distinfo
+===================================================================
+RCS file: /cvs/mystuff/games/aquaria/distinfo,v
+retrieving revision 1.1
+diff -u -p -r1.1 distinfo
+--- distinfo	9 Jun 2018 21:20:22 -0000	1.1
++++ distinfo	23 Apr 2020 20:46:59 -0000
+@@ -1,2 +1,2 @@
+-SHA256 (aquaria-20160619-84366ad5.tar.gz) = 0J3kgeNXGdXc95TwjpwsST+2UdVXCr2OfgPl0afKS6o=
+-SIZE (aquaria-20160619-84366ad5.tar.gz) = 5728223
++SHA256 (aquaria-1.2.20190905-988db94b.tar.gz) = 12IWZ3IYWXqSLmoxN3Nqt3eZOprPhNRIjGolhTYZ0D8=
++SIZE (aquaria-1.2.20190905-988db94b.tar.gz) = 6194630
+Index: patches/patch-Aquaria_ScriptInterface_cpp
+===================================================================
+RCS file: patches/patch-Aquaria_ScriptInterface_cpp
+diff -N patches/patch-Aquaria_ScriptInterface_cpp
+--- patches/patch-Aquaria_ScriptInterface_cpp	5 Oct 2019 04:12:27 -0000	1.1
++++ /dev/null	1 Jan 1970 00:00:00 -0000
+@@ -1,16 +0,0 @@
+-$OpenBSD$
+-
+-String between literal and identifier required by C++11
+-
+-Index: Aquaria/ScriptInterface.cpp
+---- Aquaria/ScriptInterface.cpp.orig
+-+++ Aquaria/ScriptInterface.cpp
+-@@ -10409,7 +10409,7 @@ static const struct {
+- #undef MK_ALIAS
+- #define MK_FUNC(base, getter, prefix, suffix) luaRegister(prefix##_##suffix),
+- #define MK_STR(s) #s
+--#define MK_ALIAS(prefix, suffix, alias) {MK_STR(prefix)"_"MK_STR(alias), l_##prefix##_##suffix},
+-+#define MK_ALIAS(prefix, suffix, alias) {MK_STR(prefix)"_" MK_STR(alias), l_##prefix##_##suffix},
+- 
+- 	EXPAND_FUNC_PROTOTYPES
+- 
+Index: patches/patch-BBGE_TTFFont_cpp
+===================================================================
+RCS file: patches/patch-BBGE_TTFFont_cpp
+diff -N patches/patch-BBGE_TTFFont_cpp
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ patches/patch-BBGE_TTFFont_cpp	23 Apr 2020 20:46:59 -0000
+@@ -0,0 +1,26 @@
++$OpenBSD$
++
++Fix base-clang/ports-gcc build. Context:
++https://github.com/AquariaOSE/Aquaria/pull/54
++
++Index: BBGE/TTFFont.cpp
++--- BBGE/TTFFont.cpp.orig
+++++ BBGE/TTFFont.cpp
++@@ -20,16 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston,
++ */
++ 
++ #include "TTFFont.h"
++-
++-#ifdef AQUARIA_INTERNAL_FTGL
++-#include <ft2build.h>
++-#include FT_FREETYPE_H
++-
++-#include "FTGL.h"
++-#include "FTGLTextureFont.h"
++-#else
++-#include <FTGL/ftgl.h>
++-#endif
+++#include "RenderBase.h"
++ 
++ #undef min
++ #undef max
+Index: patches/patch-BBGE_TTFFont_h
+===================================================================
+RCS file: patches/patch-BBGE_TTFFont_h
+diff -N patches/patch-BBGE_TTFFont_h
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ patches/patch-BBGE_TTFFont_h	23 Apr 2020 20:46:59 -0000
+@@ -0,0 +1,25 @@
++$OpenBSD$
++
++Fix base-clang/ports-gcc build. Context:
++https://github.com/AquariaOSE/Aquaria/pull/54
++
++Index: BBGE/TTFFont.h
++--- BBGE/TTFFont.h.orig
+++++ BBGE/TTFFont.h
++@@ -23,7 +23,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston,
++ 
++ #include "BaseText.h"
++ 
++-class FTGLTextureFont;
+++#ifdef AQUARIA_INTERNAL_FTGL
+++#include <ft2build.h>
+++#include FT_FREETYPE_H
+++
+++#include "FTGL.h"
+++#include "FTGLTextureFont.h"
+++#else
+++#include <FTGL/ftgl.h>
+++#endif
++ 
++ struct TTFFont
++ {
+Index: patches/patch-CMakeLists_txt
+===================================================================
+RCS file: /cvs/mystuff/games/aquaria/patches/patch-CMakeLists_txt,v
+retrieving revision 1.1
+diff -u -p -r1.1 patch-CMakeLists_txt
+--- patches/patch-CMakeLists_txt	9 Jun 2018 21:20:22 -0000	1.1
++++ patches/patch-CMakeLists_txt	23 Apr 2020 20:46:59 -0000
+@@ -1,16 +1,15 @@
+-:OpenBSD$
++$OpenBSD$
+ 
+ include dir for X11
+ 
+ Index: CMakeLists.txt
+ --- CMakeLists.txt.orig
+ +++ CMakeLists.txt
+-@@ -266,7 +266,7 @@ INCLUDE_DIRECTORIES(${SDL_INCLUDE_DIR})
++@@ -280,6 +280,7 @@ INCLUDE_DIRECTORIES(${SDL_INCLUDE_DIR})
+  INCLUDE_DIRECTORIES(${OPENAL_INCLUDE_DIR})
+  INCLUDE_DIRECTORIES(${TINYXML2_INCLUDE_DIRS})
+  INCLUDE_DIRECTORIES(${EXTLIBDIR})
+--
+ +INCLUDE_DIRECTORIES("/usr/X11R6/include")
+  
+  
+- # Custom build ID: e.g. "-custom", " (my very own build)"
++ 
+Index: patches/patch-CMakeLists_txt.orig
+===================================================================
+RCS file: patches/patch-CMakeLists_txt.orig
+diff -N patches/patch-CMakeLists_txt.orig
+--- patches/patch-CMakeLists_txt.orig	9 Jun 2018 21:20:22 -0000	1.1
++++ /dev/null	1 Jan 1970 00:00:00 -0000
+@@ -1,16 +0,0 @@
+-$OpenBSD$
+-
+-include dir for X11
+-
+-Index: CMakeLists.txt
+---- CMakeLists.txt.orig
+-+++ CMakeLists.txt
+-@@ -266,7 +266,7 @@ INCLUDE_DIRECTORIES(${SDL_INCLUDE_DIR})
+- INCLUDE_DIRECTORIES(${OPENAL_INCLUDE_DIR})
+- INCLUDE_DIRECTORIES(${TINYXML2_INCLUDE_DIRS})
+- INCLUDE_DIRECTORIES(${EXTLIBDIR})
+--
+-+INCLUDE_DIRECTORIES("${X11BASE}/include")
+- 
+- 
+- # Custom build ID: e.g. "-custom", " (my very own build)"
+Index: pkg/PLIST
+===================================================================
+RCS file: /cvs/mystuff/games/aquaria/pkg/PLIST,v
+retrieving revision 1.1
+diff -u -p -r1.1 PLIST
+--- pkg/PLIST	9 Jun 2018 21:20:22 -0000	1.1
++++ pkg/PLIST	23 Apr 2020 20:46:59 -0000
+@@ -1,2 +1,966 @@
+-@comment $OpenBSD$
++@comment $OpenBSD: PLIST,v$
+ @bin bin/aquaria
++share/aquaria/
++share/aquaria/files/
++share/aquaria/files/data/
++share/aquaria/files/data/achievements.txt
++share/aquaria/files/data/animations/
++share/aquaria/files/data/animations/drasktrident.xml
++share/aquaria/files/data/animations/queen-statue.xml
++share/aquaria/files/data/animations/skins/
++share/aquaria/files/data/animations/skins/drask-statue.xml
++share/aquaria/files/data/ingredientnames.txt
++share/aquaria/files/data/localecase.txt
++share/aquaria/files/data/shots/
++share/aquaria/files/data/shots/li.txt
++share/aquaria/files/data/shots/petblasterfire.txt
++share/aquaria/files/data/stringbank.txt
++share/aquaria/files/data/worldmap.txt
++share/aquaria/files/gfx/
++share/aquaria/files/gfx/drask/
++share/aquaria/files/gfx/drask/statue-arm1.png
++share/aquaria/files/gfx/drask/statue-arm2.png
++share/aquaria/files/gfx/drask/statue-arm3.png
++share/aquaria/files/gfx/drask/statue-body.png
++share/aquaria/files/gfx/drask/statue-head.png
++share/aquaria/files/gfx/drask/statue-leg1.png
++share/aquaria/files/gfx/drask/statue-leg2.png
++share/aquaria/files/gfx/drask/statue-leg3.png
++share/aquaria/files/gfx/gui/
++share/aquaria/files/gfx/gui/audio.png
++share/aquaria/files/gfx/gui/confirm-bg.png
++share/aquaria/files/gfx/gui/simpleblue-button-down.png
++share/aquaria/files/gfx/gui/simpleblue-button-up.png
++share/aquaria/files/gfx/gui/worldmap/
++share/aquaria/files/gfx/gui/worldmap/whale.png
++share/aquaria/files/gfx/modselect/
++share/aquaria/files/gfx/modselect/bar.png
++share/aquaria/files/gfx/modselect/download.png
++share/aquaria/files/gfx/modselect/exit.png
++share/aquaria/files/gfx/modselect/ico_check.png
++share/aquaria/files/gfx/modselect/ico_locked.png
++share/aquaria/files/gfx/modselect/ico_patch.png
++share/aquaria/files/gfx/modselect/ico_update.png
++share/aquaria/files/gfx/modselect/installed.png
++share/aquaria/files/gfx/modselect/patches.png
++share/aquaria/files/gfx/modselect/tube.png
++share/aquaria/files/gfx/queen-statue/
++share/aquaria/files/gfx/queen-statue/arm1.png
++share/aquaria/files/gfx/queen-statue/arm2.png
++share/aquaria/files/gfx/queen-statue/arm3.png
++share/aquaria/files/gfx/queen-statue/body.png
++share/aquaria/files/gfx/queen-statue/head.png
++share/aquaria/files/gfx/queen-statue/leg1.png
++share/aquaria/files/gfx/queen-statue/leg2.png
++share/aquaria/files/gfx/queen-statue/leg3.png
++share/aquaria/files/locales/
++share/aquaria/files/locales/ru/
++share/aquaria/files/locales/ru/data/
++share/aquaria/files/locales/ru/data/font-small.glf
++share/aquaria/files/locales/ru/data/font.ttf
++share/aquaria/files/locales/ru/data/help_bindsong.txt
++share/aquaria/files/locales/ru/data/help_end.txt
++share/aquaria/files/locales/ru/data/help_end_mac.txt
++share/aquaria/files/locales/ru/data/help_energyform.txt
++share/aquaria/files/locales/ru/data/help_header.txt
++share/aquaria/files/locales/ru/data/help_header_mac.txt
++share/aquaria/files/locales/ru/data/help_other.txt
++share/aquaria/files/locales/ru/data/help_start.txt
++share/aquaria/files/locales/ru/data/ingredientnames.txt
++share/aquaria/files/locales/ru/data/localecase.txt
++share/aquaria/files/locales/ru/data/songs.xml
++share/aquaria/files/locales/ru/data/stringbank.txt
++share/aquaria/files/locales/ru/gfx/
++share/aquaria/files/locales/ru/gfx/font.png
++share/aquaria/files/scripts/
++share/aquaria/files/scripts/.gitignore
++share/aquaria/files/scripts/compat/
++share/aquaria/files/scripts/compat/forward-compatible.lua
++share/aquaria/files/scripts/compat/internal/
++share/aquaria/files/scripts/compat/internal/loader.lua
++share/aquaria/files/scripts/compat/internal/old_1.1.lua
++share/aquaria/files/scripts/compat/internal/oldfunctions.lua
++share/aquaria/files/scripts/compat/legacy.lua
++share/aquaria/files/scripts/compat/no-deprecated.lua
++share/aquaria/files/scripts/entities/
++share/aquaria/files/scripts/entities/00_starter.lua
++share/aquaria/files/scripts/entities/13_progression.lua
++share/aquaria/files/scripts/entities/SunDoor.lua
++share/aquaria/files/scripts/entities/_unused/
++share/aquaria/files/scripts/entities/_unused/13_mainarea.lua
++share/aquaria/files/scripts/entities/_unused/abyssspikes.lua
++share/aquaria/files/scripts/entities/_unused/aleph.lua
++share/aquaria/files/scripts/entities/_unused/altar.lua
++share/aquaria/files/scripts/entities/_unused/ancient-bulb.lua
++share/aquaria/files/scripts/entities/_unused/ancient-plant.lua
++share/aquaria/files/scripts/entities/_unused/blasteregg.lua
++share/aquaria/files/scripts/entities/_unused/blastermother.lua
++share/aquaria/files/scripts/entities/_unused/cc_enddemo.lua
++share/aquaria/files/scripts/entities/_unused/cc_lostincave.lua
++share/aquaria/files/scripts/entities/_unused/cc_missingmom.lua
++share/aquaria/files/scripts/entities/_unused/cc_wantgf.lua
++share/aquaria/files/scripts/entities/_unused/cf6-shot.lua
++share/aquaria/files/scripts/entities/_unused/childdrask.lua
++share/aquaria/files/scripts/entities/_unused/childsharan.lua
++share/aquaria/files/scripts/entities/_unused/childteira.lua
++share/aquaria/files/scripts/entities/_unused/collectiblebabycrib.lua
++share/aquaria/files/scripts/entities/_unused/collectibleturtleshell.lua
++share/aquaria/files/scripts/entities/_unused/creatorform1sunkencity.lua
++share/aquaria/files/scripts/entities/_unused/creatorform3.lua
++share/aquaria/files/scripts/entities/_unused/creepyface.lua
++share/aquaria/files/scripts/entities/_unused/currentswitch.lua
++share/aquaria/files/scripts/entities/_unused/currentswitchoff.lua
++share/aquaria/files/scripts/entities/_unused/currentswitchon.lua
++share/aquaria/files/scripts/entities/_unused/dandelion-spore.lua
++share/aquaria/files/scripts/entities/_unused/draskpriestbattle.lua
++share/aquaria/files/scripts/entities/_unused/efendu.lua
++share/aquaria/files/scripts/entities/_unused/egg.lua
++share/aquaria/files/scripts/entities/_unused/end-common.lua
++share/aquaria/files/scripts/entities/_unused/energybossclimb.lua
++share/aquaria/files/scripts/entities/_unused/energygod.lua
++share/aquaria/files/scripts/entities/_unused/fan.lua
++share/aquaria/files/scripts/entities/_unused/fatso.lua
++share/aquaria/files/scripts/entities/_unused/forestghost.lua
++share/aquaria/files/scripts/entities/_unused/forestgodcrab.lua
++share/aquaria/files/scripts/entities/_unused/jellynew.lua
++share/aquaria/files/scripts/entities/_unused/kairam.lua
++share/aquaria/files/scripts/entities/_unused/lesserwurm.lua
++share/aquaria/files/scripts/entities/_unused/lumite.lua
++share/aquaria/files/scripts/entities/_unused/lumitebreeder.lua
++share/aquaria/files/scripts/entities/_unused/mengil.lua
++share/aquaria/files/scripts/entities/_unused/metalobject.lua
++share/aquaria/files/scripts/entities/_unused/minicrab.lua
++share/aquaria/files/scripts/entities/_unused/mithalanfamily.lua
++share/aquaria/files/scripts/entities/_unused/ompo.lua
++share/aquaria/files/scripts/entities/_unused/pathtest.lua
++share/aquaria/files/scripts/entities/_unused/peteggcommon.lua
++share/aquaria/files/scripts/entities/_unused/plantcommon.lua
++share/aquaria/files/scripts/entities/_unused/poisonberry.lua
++share/aquaria/files/scripts/entities/_unused/prologue_energyboss.lua
++share/aquaria/files/scripts/entities/_unused/prologue_mithala.lua
++share/aquaria/files/scripts/entities/_unused/queenhydra.lua
++share/aquaria/files/scripts/entities/_unused/rotfish-blob.lua
++share/aquaria/files/scripts/entities/_unused/rotfish.lua
++share/aquaria/files/scripts/entities/_unused/sacrificebutton.lua
++share/aquaria/files/scripts/entities/_unused/sacrificevictim.lua
++share/aquaria/files/scripts/entities/_unused/savepoint.lua
++share/aquaria/files/scripts/entities/_unused/schoolfish1.lua
++share/aquaria/files/scripts/entities/_unused/seaslug.lua
++share/aquaria/files/scripts/entities/_unused/seaturtlebg.lua
++share/aquaria/files/scripts/entities/_unused/skeletaltest.lua
++share/aquaria/files/scripts/entities/_unused/spikeball.lua
++share/aquaria/files/scripts/entities/_unused/spikeyegg.lua
++share/aquaria/files/scripts/entities/_unused/spikeyeggdown.lua
++share/aquaria/files/scripts/entities/_unused/spikeyeggup.lua
++share/aquaria/files/scripts/entities/_unused/springplant.lua
++share/aquaria/files/scripts/entities/_unused/squeezer.lua
++share/aquaria/files/scripts/entities/_unused/stresstest.lua
++share/aquaria/files/scripts/entities/_unused/studenta.lua
++share/aquaria/files/scripts/entities/_unused/thermalvent.lua
++share/aquaria/files/scripts/entities/_unused/transitfish.lua
++share/aquaria/files/scripts/entities/_unused/tungar.lua
++share/aquaria/files/scripts/entities/_unused/weed.lua
++share/aquaria/files/scripts/entities/_unused/zunna.lua
++share/aquaria/files/scripts/entities/abaddon.lua
++share/aquaria/files/scripts/entities/abyssoctopus.lua
++share/aquaria/files/scripts/entities/aggrobaby.lua
++share/aquaria/files/scripts/entities/aggroeggs.lua
++share/aquaria/files/scripts/entities/aggrohopper.lua
++share/aquaria/files/scripts/entities/airship.lua
++share/aquaria/files/scripts/entities/anemone.lua
++share/aquaria/files/scripts/entities/anemone2.lua
++share/aquaria/files/scripts/entities/anemone3.lua
++share/aquaria/files/scripts/entities/anemone4.lua
++share/aquaria/files/scripts/entities/anglerfish.lua
++share/aquaria/files/scripts/entities/architect.lua
++share/aquaria/files/scripts/entities/armapillar.lua
++share/aquaria/files/scripts/entities/arnassi-spirit.lua
++share/aquaria/files/scripts/entities/babydeepshrimp.lua
++share/aquaria/files/scripts/entities/beluga-bubble.lua
++share/aquaria/files/scripts/entities/beluga.lua
++share/aquaria/files/scripts/entities/bevy.lua
++share/aquaria/files/scripts/entities/bigblaster.lua
++share/aquaria/files/scripts/entities/bigmaul.lua
++share/aquaria/files/scripts/entities/bigmouth.lua
++share/aquaria/files/scripts/entities/bigmouthparasite.lua
++share/aquaria/files/scripts/entities/bioplant.lua
++share/aquaria/files/scripts/entities/biteymouth.lua
++share/aquaria/files/scripts/entities/blaster.lua
++share/aquaria/files/scripts/entities/blazer.lua
++share/aquaria/files/scripts/entities/bloodcell-common.lua
++share/aquaria/files/scripts/entities/bloodcell-red.lua
++share/aquaria/files/scripts/entities/bloodcell-white.lua
++share/aquaria/files/scripts/entities/breakablecommon.lua
++share/aquaria/files/scripts/entities/brokenpiece.lua
++share/aquaria/files/scripts/entities/camopus.lua
++share/aquaria/files/scripts/entities/castlecrab.lua
++share/aquaria/files/scripts/entities/cathedraldoor.lua
++share/aquaria/files/scripts/entities/cavefish1.lua
++share/aquaria/files/scripts/entities/cavefish2.lua
++share/aquaria/files/scripts/entities/cavefish3.lua
++share/aquaria/files/scripts/entities/cavefish4.lua
++share/aquaria/files/scripts/entities/cavefishcommon.lua
++share/aquaria/files/scripts/entities/cc_cat.lua
++share/aquaria/files/scripts/entities/cc_endofgame.lua
++share/aquaria/files/scripts/entities/cc_father.lua
++share/aquaria/files/scripts/entities/cc_final.lua
++share/aquaria/files/scripts/entities/cc_getrocked.lua
++share/aquaria/files/scripts/entities/cc_gf.lua
++share/aquaria/files/scripts/entities/cc_kid.lua
++share/aquaria/files/scripts/entities/cc_mother.lua
++share/aquaria/files/scripts/entities/cc_statuehead.lua
++share/aquaria/files/scripts/entities/cc_sunkencity.lua
++share/aquaria/files/scripts/entities/cellgenerator.lua
++share/aquaria/files/scripts/entities/chestmonster.lua
++share/aquaria/files/scripts/entities/chomper.lua
++share/aquaria/files/scripts/entities/clam.lua
++share/aquaria/files/scripts/entities/clay.lua
++share/aquaria/files/scripts/entities/claystatue.lua
++share/aquaria/files/scripts/entities/clockworkcrab.lua
++share/aquaria/files/scripts/entities/clockworkfish.lua
++share/aquaria/files/scripts/entities/collectibleanemoneseed.lua
++share/aquaria/files/scripts/entities/collectiblearnassistatue.lua
++share/aquaria/files/scripts/entities/collectiblebanner.lua
++share/aquaria/files/scripts/entities/collectiblebioseed.lua
++share/aquaria/files/scripts/entities/collectibleblackpearl.lua
++share/aquaria/files/scripts/entities/collectibleblasteregg.lua
++share/aquaria/files/scripts/entities/collectiblechest.lua
++share/aquaria/files/scripts/entities/collectiblecrabcostume.lua
++share/aquaria/files/scripts/entities/collectibledumboegg.lua
++share/aquaria/files/scripts/entities/collectibleenergyboss.lua
++share/aquaria/files/scripts/entities/collectibleenergystatue.lua
++share/aquaria/files/scripts/entities/collectibleenergytemple.lua
++share/aquaria/files/scripts/entities/collectiblegear.lua
++share/aquaria/files/scripts/entities/collectiblejellycostume.lua
++share/aquaria/files/scripts/entities/collectiblejellyplant.lua
++share/aquaria/files/scripts/entities/collectiblemithaladoll.lua
++share/aquaria/files/scripts/entities/collectiblemithalancostume.lua
++share/aquaria/files/scripts/entities/collectiblemithalaspot.lua
++share/aquaria/files/scripts/entities/collectiblemutantcostume.lua
++share/aquaria/files/scripts/entities/collectiblenaijacave.lua
++share/aquaria/files/scripts/entities/collectiblenautilusprime.lua
++share/aquaria/files/scripts/entities/collectiblepiranhaegg.lua
++share/aquaria/files/scripts/entities/collectibleseahorsecostume.lua
++share/aquaria/files/scripts/entities/collectibleseedbag.lua
++share/aquaria/files/scripts/entities/collectibleskull.lua
++share/aquaria/files/scripts/entities/collectiblesongcave.lua
++share/aquaria/files/scripts/entities/collectiblesporeseed.lua
++share/aquaria/files/scripts/entities/collectiblestarfish.lua
++share/aquaria/files/scripts/entities/collectiblestonehead.lua
++share/aquaria/files/scripts/entities/collectiblesunkey.lua
++share/aquaria/files/scripts/entities/collectibleteencostume.lua
++share/aquaria/files/scripts/entities/collectibletridenthead.lua
++share/aquaria/files/scripts/entities/collectibleturtleegg.lua
++share/aquaria/files/scripts/entities/collectibleupsidedownseed.lua
++share/aquaria/files/scripts/entities/collectibleurchincostume.lua
++share/aquaria/files/scripts/entities/collectiblewalkerbaby.lua
++share/aquaria/files/scripts/entities/core.lua
++share/aquaria/files/scripts/entities/coward.lua
++share/aquaria/files/scripts/entities/crabboss.lua
++share/aquaria/files/scripts/entities/crawlvirus.lua
++share/aquaria/files/scripts/entities/crawpappy.lua
++share/aquaria/files/scripts/entities/creatorform1.lua
++share/aquaria/files/scripts/entities/creatorform2.lua
++share/aquaria/files/scripts/entities/creatorform4.lua
++share/aquaria/files/scripts/entities/creatorform5.lua
++share/aquaria/files/scripts/entities/creatorform6.lua
++share/aquaria/files/scripts/entities/creatorshadow.lua
++share/aquaria/files/scripts/entities/creatorsunkencity.lua
++share/aquaria/files/scripts/entities/crotoid.lua
++share/aquaria/files/scripts/entities/crystalholder.lua
++share/aquaria/files/scripts/entities/cursorswarmer.lua
++share/aquaria/files/scripts/entities/dandelion.lua
++share/aquaria/files/scripts/entities/dark-li-shot.lua
++share/aquaria/files/scripts/entities/darkjelly.lua
++share/aquaria/files/scripts/entities/darkjellyfg.lua
++share/aquaria/files/scripts/entities/deepcrawley.lua
++share/aquaria/files/scripts/entities/deepeel.lua
++share/aquaria/files/scripts/entities/deepjelly.lua
++share/aquaria/files/scripts/entities/deepurchin.lua
++share/aquaria/files/scripts/entities/deepwhale.lua
++share/aquaria/files/scripts/entities/doorcommon.lua
++share/aquaria/files/scripts/entities/drask-final.lua
++share/aquaria/files/scripts/entities/drask-statue.lua
++share/aquaria/files/scripts/entities/drask.lua
++share/aquaria/files/scripts/entities/druniad-final.lua
++share/aquaria/files/scripts/entities/druniad.lua
++share/aquaria/files/scripts/entities/duoeye.lua
++share/aquaria/files/scripts/entities/eel.lua
++share/aquaria/files/scripts/entities/ekko.lua
++share/aquaria/files/scripts/entities/ekkrit.lua
++share/aquaria/files/scripts/entities/electriceel.lua
++share/aquaria/files/scripts/entities/empty.lua
++share/aquaria/files/scripts/entities/energybarrier.lua
++share/aquaria/files/scripts/entities/energybarrierflicker.lua
++share/aquaria/files/scripts/entities/energybarrieroff.lua
++share/aquaria/files/scripts/entities/energybarriersolid.lua
++share/aquaria/files/scripts/entities/energyboss.lua
++share/aquaria/files/scripts/entities/energydoor.lua
++share/aquaria/files/scripts/entities/energygodspirit.lua
++share/aquaria/files/scripts/entities/energylamp.lua
++share/aquaria/files/scripts/entities/energyorb.lua
++share/aquaria/files/scripts/entities/energyorbcracked.lua
++share/aquaria/files/scripts/entities/entities.txt
++share/aquaria/files/scripts/entities/entitygroups.txt
++share/aquaria/files/scripts/entities/entityinclude.lua
++share/aquaria/files/scripts/entities/eric_13.lua
++share/aquaria/files/scripts/entities/eric_energyboss.lua
++share/aquaria/files/scripts/entities/eric_erulian.lua
++share/aquaria/files/scripts/entities/eric_forestgod.lua
++share/aquaria/files/scripts/entities/eric_mithala.lua
++share/aquaria/files/scripts/entities/eric_mutantnaija.lua
++share/aquaria/files/scripts/entities/eric_sunkenmom.lua
++share/aquaria/files/scripts/entities/erulian-final.lua
++share/aquaria/files/scripts/entities/erulianghost.lua
++share/aquaria/files/scripts/entities/eviljelly.lua
++share/aquaria/files/scripts/entities/eyespiral.lua
++share/aquaria/files/scripts/entities/falsebg.lua
++share/aquaria/files/scripts/entities/final-mutant.lua
++share/aquaria/files/scripts/entities/finaldoor.lua
++share/aquaria/files/scripts/entities/finalspiritcommon.lua
++share/aquaria/files/scripts/entities/finaltongue.lua
++share/aquaria/files/scripts/entities/fishcaveglow.lua
++share/aquaria/files/scripts/entities/flatfish.lua
++share/aquaria/files/scripts/entities/flea.lua
++share/aquaria/files/scripts/entities/floating-city.lua
++share/aquaria/files/scripts/entities/forestgod.lua
++share/aquaria/files/scripts/entities/forestgodseed.lua
++share/aquaria/files/scripts/entities/forestgodvine.lua
++share/aquaria/files/scripts/entities/forestgodvinehead.lua
++share/aquaria/files/scripts/entities/forestsprite.lua
++share/aquaria/files/scripts/entities/formupgradeenergy1.lua
++share/aquaria/files/scripts/entities/formupgradeenergy2.lua
++share/aquaria/files/scripts/entities/froog.lua
++share/aquaria/files/scripts/entities/gateway.lua
++share/aquaria/files/scripts/entities/gear.lua
++share/aquaria/files/scripts/entities/gearcommon.lua
++share/aquaria/files/scripts/entities/gearfast.lua
++share/aquaria/files/scripts/entities/gearmed.lua
++share/aquaria/files/scripts/entities/gearslow.lua
++share/aquaria/files/scripts/entities/globecrab.lua
++share/aquaria/files/scripts/entities/grabbyarm.lua
++share/aquaria/files/scripts/entities/greenseadragon.lua
++share/aquaria/files/scripts/entities/groundshocker.lua
++share/aquaria/files/scripts/entities/groundshockerattackcommon.lua
++share/aquaria/files/scripts/entities/groundshockerattackl.lua
++share/aquaria/files/scripts/entities/groundshockerattackr.lua
++share/aquaria/files/scripts/entities/groundshockershell.lua
++share/aquaria/files/scripts/entities/grouper.lua
++share/aquaria/files/scripts/entities/guardian.lua
++share/aquaria/files/scripts/entities/hardbeetle.lua
++share/aquaria/files/scripts/entities/hatchetfish.lua
++share/aquaria/files/scripts/entities/healthplant.lua
++share/aquaria/files/scripts/entities/healthupgrade0.lua
++share/aquaria/files/scripts/entities/healthupgrade1.lua
++share/aquaria/files/scripts/entities/healthupgrade2.lua
++share/aquaria/files/scripts/entities/healthupgrade3.lua
++share/aquaria/files/scripts/entities/healthupgrade4.lua
++share/aquaria/files/scripts/entities/hellbeast.lua
++share/aquaria/files/scripts/entities/horror.lua
++share/aquaria/files/scripts/entities/horseshoe.lua
++share/aquaria/files/scripts/entities/huggy.lua
++share/aquaria/files/scripts/entities/hydrawurm.lua
++share/aquaria/files/scripts/entities/icechunkcommon.lua
++share/aquaria/files/scripts/entities/icechunklarge.lua
++share/aquaria/files/scripts/entities/icechunkmedium.lua
++share/aquaria/files/scripts/entities/icechunksmall.lua
++share/aquaria/files/scripts/entities/icecrab.lua
++share/aquaria/files/scripts/entities/icejelly.lua
++share/aquaria/files/scripts/entities/iceshrimp.lua
++share/aquaria/files/scripts/entities/jelly.lua
++share/aquaria/files/scripts/entities/jellyshock.lua
++share/aquaria/files/scripts/entities/jellysmall.lua
++share/aquaria/files/scripts/entities/jellyzap.lua
++share/aquaria/files/scripts/entities/kappa.lua
++share/aquaria/files/scripts/entities/kingcrab.lua
++share/aquaria/files/scripts/entities/kingjelly.lua
++share/aquaria/files/scripts/entities/krill.lua
++share/aquaria/files/scripts/entities/krilleggs.lua
++share/aquaria/files/scripts/entities/krotite-end.lua
++share/aquaria/files/scripts/entities/krotite-final.lua
++share/aquaria/files/scripts/entities/krotiteerulianbattle01.lua
++share/aquaria/files/scripts/entities/krotiteontheway.lua
++share/aquaria/files/scripts/entities/krotitevskrotite.lua
++share/aquaria/files/scripts/entities/krotiteworshipper.lua
++share/aquaria/files/scripts/entities/leach.lua
++share/aquaria/files/scripts/entities/leopardshark.lua
++share/aquaria/files/scripts/entities/li.lua
++share/aquaria/files/scripts/entities/licage.lua
++share/aquaria/files/scripts/entities/lightcrystal.lua
++share/aquaria/files/scripts/entities/lightcrystalcharged.lua
++share/aquaria/files/scripts/entities/lightcrystalcommon.lua
++share/aquaria/files/scripts/entities/lihelmet.lua
++share/aquaria/files/scripts/entities/lionfish.lua
++share/aquaria/files/scripts/entities/lipuppet.lua
++share/aquaria/files/scripts/entities/loper.lua
++share/aquaria/files/scripts/entities/lucien-baby.lua
++share/aquaria/files/scripts/entities/lucien.lua
++share/aquaria/files/scripts/entities/luciengf.lua
++share/aquaria/files/scripts/entities/mamaturtle.lua
++share/aquaria/files/scripts/entities/mantis-bomb.lua
++share/aquaria/files/scripts/entities/mantis.lua
++share/aquaria/files/scripts/entities/maul.lua
++share/aquaria/files/scripts/entities/merchild.lua
++share/aquaria/files/scripts/entities/mergog.lua
++share/aquaria/files/scripts/entities/merman.lua
++share/aquaria/files/scripts/entities/mermanthin.lua
++share/aquaria/files/scripts/entities/mermog.lua
++share/aquaria/files/scripts/entities/mermoth.lua
++share/aquaria/files/scripts/entities/merwoman.lua
++share/aquaria/files/scripts/entities/metaray.lua
++share/aquaria/files/scripts/entities/mia.lua
++share/aquaria/files/scripts/entities/miaghost.lua
++share/aquaria/files/scripts/entities/minnow.lua
++share/aquaria/files/scripts/entities/mithalasurn.lua
++share/aquaria/files/scripts/entities/moloch.lua
++share/aquaria/files/scripts/entities/momeyes.lua
++share/aquaria/files/scripts/entities/moneye.lua
++share/aquaria/files/scripts/entities/moneyebreeder.lua
++share/aquaria/files/scripts/entities/monkey.lua
++share/aquaria/files/scripts/entities/moray.lua
++share/aquaria/files/scripts/entities/mosshead.lua
++share/aquaria/files/scripts/entities/mutantnaija.lua
++share/aquaria/files/scripts/entities/mutileye.lua
++share/aquaria/files/scripts/entities/mutilus.lua
++share/aquaria/files/scripts/entities/naijababyghost.lua
++share/aquaria/files/scripts/entities/naijachild.lua
++share/aquaria/files/scripts/entities/naijachildghost.lua
++share/aquaria/files/scripts/entities/naijaswarmercommon.lua
++share/aquaria/files/scripts/entities/natureformflowers.lua
++share/aquaria/files/scripts/entities/nauplius.lua
++share/aquaria/files/scripts/entities/nautilus.lua
++share/aquaria/files/scripts/entities/nautilusprime.lua
++share/aquaria/files/scripts/entities/newtblaster.lua
++share/aquaria/files/scripts/entities/nudi.lua
++share/aquaria/files/scripts/entities/nudibranch0.lua
++share/aquaria/files/scripts/entities/nudibranch1.lua
++share/aquaria/files/scripts/entities/nudibranch2.lua
++share/aquaria/files/scripts/entities/nudibranch3.lua
++share/aquaria/files/scripts/entities/nudibranchtemplate.lua
++share/aquaria/files/scripts/entities/nudicommon.lua
++share/aquaria/files/scripts/entities/nudinoshell.lua
++share/aquaria/files/scripts/entities/oarfish.lua
++share/aquaria/files/scripts/entities/octomun.lua
++share/aquaria/files/scripts/entities/orbholder.lua
++share/aquaria/files/scripts/entities/orbiter.lua
++share/aquaria/files/scripts/entities/originalraspberry.lua
++share/aquaria/files/scripts/entities/otter.lua
++share/aquaria/files/scripts/entities/parrot.lua
++share/aquaria/files/scripts/entities/pet_blaster.lua
++share/aquaria/files/scripts/entities/pet_dumbo.lua
++share/aquaria/files/scripts/entities/pet_nautilus.lua
++share/aquaria/files/scripts/entities/pet_piranha.lua
++share/aquaria/files/scripts/entities/phonograph.lua
++share/aquaria/files/scripts/entities/piranha.lua
++share/aquaria/files/scripts/entities/pistolshrimp.lua
++share/aquaria/files/scripts/entities/plasmaworm.lua
++share/aquaria/files/scripts/entities/plasmawormbg.lua
++share/aquaria/files/scripts/entities/predatorytunicate.lua
++share/aquaria/files/scripts/entities/priest.lua
++share/aquaria/files/scripts/entities/priestnormal.lua
++share/aquaria/files/scripts/entities/pufferfish.lua
++share/aquaria/files/scripts/entities/pullplantcommon.lua
++share/aquaria/files/scripts/entities/pullplantnormal.lua
++share/aquaria/files/scripts/entities/queen-statue.lua
++share/aquaria/files/scripts/entities/raspberry.lua
++share/aquaria/files/scripts/entities/rednautilus.lua
++share/aquaria/files/scripts/entities/rock0001.lua
++share/aquaria/files/scripts/entities/rock0002.lua
++share/aquaria/files/scripts/entities/rock0003.lua
++share/aquaria/files/scripts/entities/rock0004.lua
++share/aquaria/files/scripts/entities/rock0005.lua
++share/aquaria/files/scripts/entities/rock0006.lua
++share/aquaria/files/scripts/entities/rock0007.lua
++share/aquaria/files/scripts/entities/rock2.lua
++share/aquaria/files/scripts/entities/rockhead.lua
++share/aquaria/files/scripts/entities/roodshrimp.lua
++share/aquaria/files/scripts/entities/rotbaby-form1.lua
++share/aquaria/files/scripts/entities/rotbaby-form2.lua
++share/aquaria/files/scripts/entities/rotbaby-form3.lua
++share/aquaria/files/scripts/entities/rotcore.lua
++share/aquaria/files/scripts/entities/rotcrab.lua
++share/aquaria/files/scripts/entities/rotworm.lua
++share/aquaria/files/scripts/entities/roundvirus-bg.lua
++share/aquaria/files/scripts/entities/roundvirus.lua
++share/aquaria/files/scripts/entities/rukh.lua
++share/aquaria/files/scripts/entities/scavenger.lua
++share/aquaria/files/scripts/entities/scooter.lua
++share/aquaria/files/scripts/entities/seahorse.lua
++share/aquaria/files/scripts/entities/seahorse2.lua
++share/aquaria/files/scripts/entities/seahorse3.lua
++share/aquaria/files/scripts/entities/seahorse4.lua
++share/aquaria/files/scripts/entities/seahorse5.lua
++share/aquaria/files/scripts/entities/seahorse6.lua
++share/aquaria/files/scripts/entities/seahorsebaby.lua
++share/aquaria/files/scripts/entities/seahorsecommon.lua
++share/aquaria/files/scripts/entities/seal-king.lua
++share/aquaria/files/scripts/entities/seal-prince.lua
++share/aquaria/files/scripts/entities/seal-queen.lua
++share/aquaria/files/scripts/entities/seaturtle.lua
++share/aquaria/files/scripts/entities/seaturtlebaby-special1.lua
++share/aquaria/files/scripts/entities/seaturtlebaby-special2.lua
++share/aquaria/files/scripts/entities/seaturtlebaby-special3.lua
++share/aquaria/files/scripts/entities/seaturtlebaby.lua
++share/aquaria/files/scripts/entities/seaturtlebig.lua
++share/aquaria/files/scripts/entities/seaturtlecommon.lua
++share/aquaria/files/scripts/entities/seaturtlesmall.lua
++share/aquaria/files/scripts/entities/seawolf.lua
++share/aquaria/files/scripts/entities/seedcommon.lua
++share/aquaria/files/scripts/entities/seedflower.lua
++share/aquaria/files/scripts/entities/seedubervine.lua
++share/aquaria/files/scripts/entities/shark.lua
++share/aquaria/files/scripts/entities/shocker.lua
++share/aquaria/files/scripts/entities/shrimp.lua
++share/aquaria/files/scripts/entities/simon.lua
++share/aquaria/files/scripts/entities/singbulb.lua
++share/aquaria/files/scripts/entities/skeeter.lua
++share/aquaria/files/scripts/entities/slendereel.lua
++share/aquaria/files/scripts/entities/slippergenerator.lua
++share/aquaria/files/scripts/entities/slipperlobster.lua
++share/aquaria/files/scripts/entities/snailgear.lua
++share/aquaria/files/scripts/entities/songdoor1.lua
++share/aquaria/files/scripts/entities/songdoorcommon.lua
++share/aquaria/files/scripts/entities/songlamp0.lua
++share/aquaria/files/scripts/entities/songlamp1.lua
++share/aquaria/files/scripts/entities/songlamp2.lua
++share/aquaria/files/scripts/entities/songlamp3.lua
++share/aquaria/files/scripts/entities/songlamp4.lua
++share/aquaria/files/scripts/entities/songlamp5.lua
++share/aquaria/files/scripts/entities/songlamp6.lua
++share/aquaria/files/scripts/entities/songlamp7.lua
++share/aquaria/files/scripts/entities/songlampcommon.lua
++share/aquaria/files/scripts/entities/songleaf.lua
++share/aquaria/files/scripts/entities/songspore.lua
++share/aquaria/files/scripts/entities/songstalk.lua
++share/aquaria/files/scripts/entities/spidercrab.lua
++share/aquaria/files/scripts/entities/spikyball.lua
++share/aquaria/files/scripts/entities/spikyblocker.lua
++share/aquaria/files/scripts/entities/spinycrab.lua
++share/aquaria/files/scripts/entities/splitter1.lua
++share/aquaria/files/scripts/entities/splitter2.lua
++share/aquaria/files/scripts/entities/spookfish.lua
++share/aquaria/files/scripts/entities/spooter.lua
++share/aquaria/files/scripts/entities/sporechild.lua
++share/aquaria/files/scripts/entities/sporechildflower.lua
++share/aquaria/files/scripts/entities/sporechildflowerportal.lua
++share/aquaria/files/scripts/entities/sporechildflowerred.lua
++share/aquaria/files/scripts/entities/sporefungus0001.lua
++share/aquaria/files/scripts/entities/sporeplant.lua
++share/aquaria/files/scripts/entities/squiddy.lua
++share/aquaria/files/scripts/entities/starmie1.lua
++share/aquaria/files/scripts/entities/starmie2.lua
++share/aquaria/files/scripts/entities/starmiecommon.lua
++share/aquaria/files/scripts/entities/statuehead.lua
++share/aquaria/files/scripts/entities/strangecreature.lua
++share/aquaria/files/scripts/entities/suncontainer.lua
++share/aquaria/files/scripts/entities/sunkencrate.lua
++share/aquaria/files/scripts/entities/sunkendad.lua
++share/aquaria/files/scripts/entities/sunkendoor.lua
++share/aquaria/files/scripts/entities/sunkenmom.lua
++share/aquaria/files/scripts/entities/sunworm.lua
++share/aquaria/files/scripts/entities/swordfish.lua
++share/aquaria/files/scripts/entities/tabar.lua
++share/aquaria/files/scripts/entities/templestatue.lua
++share/aquaria/files/scripts/entities/tigershark.lua
++share/aquaria/files/scripts/entities/timerock.lua
++share/aquaria/files/scripts/entities/titletextcenter.lua
++share/aquaria/files/scripts/entities/titletextcommon.lua
++share/aquaria/files/scripts/entities/titletextleft.lua
++share/aquaria/files/scripts/entities/toad.lua
++share/aquaria/files/scripts/entities/transturtle.lua
++share/aquaria/files/scripts/entities/triffle.lua
++share/aquaria/files/scripts/entities/trillious.lua
++share/aquaria/files/scripts/entities/tromulo.lua
++share/aquaria/files/scripts/entities/turret.lua
++share/aquaria/files/scripts/entities/turtle.lua
++share/aquaria/files/scripts/entities/turtlecommon.lua
++share/aquaria/files/scripts/entities/turtlenoshell.lua
++share/aquaria/files/scripts/entities/ubervine.lua
++share/aquaria/files/scripts/entities/ubervinecommon.lua
++share/aquaria/files/scripts/entities/ubervineunlimited.lua
++share/aquaria/files/scripts/entities/upgrade-wok.lua
++share/aquaria/files/scripts/entities/upsidedownjelly.lua
++share/aquaria/files/scripts/entities/vine.lua
++share/aquaria/files/scripts/entities/vinedoor.lua
++share/aquaria/files/scripts/entities/walker.lua
++share/aquaria/files/scripts/entities/weird-alec.lua
++share/aquaria/files/scripts/entities/weird-derek.lua
++share/aquaria/files/scripts/entities/whelk.lua
++share/aquaria/files/scripts/entities/whelkcommon.lua
++share/aquaria/files/scripts/entities/whelknoshell.lua
++share/aquaria/files/scripts/entities/wisker.lua
++share/aquaria/files/scripts/entities/wisp.lua
++share/aquaria/files/scripts/entities/youngli.lua
++share/aquaria/files/scripts/entities/zygote.lua
++share/aquaria/files/scripts/global/
++share/aquaria/files/scripts/global/menu-treasures.lua
++share/aquaria/files/scripts/include/
++share/aquaria/files/scripts/include/collectiblecostumetemplate.lua
++share/aquaria/files/scripts/include/collectibletemplate.lua
++share/aquaria/files/scripts/include/energyslottemplate.lua
++share/aquaria/files/scripts/include/healthupgradetemplate.lua
++share/aquaria/files/scripts/include/nodecollectibletemplate.lua
++share/aquaria/files/scripts/include/rocktemplate.lua
++share/aquaria/files/scripts/include/sealtemplate.lua
++share/aquaria/files/scripts/include/sporechildflowertemplate.lua
++share/aquaria/files/scripts/include/sporefungus.lua
++share/aquaria/files/scripts/maps/
++share/aquaria/files/scripts/maps/_unused/
++share/aquaria/files/scripts/maps/_unused/map_intro.lua
++share/aquaria/files/scripts/maps/_unused/node_altarswitch.lua
++share/aquaria/files/scripts/maps/_unused/node_beacon_li_off.lua
++share/aquaria/files/scripts/maps/_unused/node_beacon_songcave.lua
++share/aquaria/files/scripts/maps/_unused/node_block.lua
++share/aquaria/files/scripts/maps/_unused/node_collectiblebabycrib.lua
++share/aquaria/files/scripts/maps/_unused/node_collectiblecrabcostume.lua
++share/aquaria/files/scripts/maps/_unused/node_collectibleenergytemple.lua
++share/aquaria/files/scripts/maps/_unused/node_collectiblemithalancostume.lua
++share/aquaria/files/scripts/maps/_unused/node_collectiblepiranhaegg.lua
++share/aquaria/files/scripts/maps/_unused/node_collectibleteencostume.lua
++share/aquaria/files/scripts/maps/_unused/node_collectibleturtleshell.lua
++share/aquaria/files/scripts/maps/_unused/node_collectibleurchincostume.lua
++share/aquaria/files/scripts/maps/_unused/node_costumetest.lua
++share/aquaria/files/scripts/maps/_unused/node_creatorvoice.lua
++share/aquaria/files/scripts/maps/_unused/node_doordance.lua
++share/aquaria/files/scripts/maps/_unused/node_eatompo.lua
++share/aquaria/files/scripts/maps/_unused/node_endenergytemple.lua
++share/aquaria/files/scripts/maps/_unused/node_energyboss_done.lua
++share/aquaria/files/scripts/maps/_unused/node_energyboss_enter.lua
++share/aquaria/files/scripts/maps/_unused/node_energygod.lua
++share/aquaria/files/scripts/maps/_unused/node_entersongcave.lua
++share/aquaria/files/scripts/maps/_unused/node_formbarrier.lua
++share/aquaria/files/scripts/maps/_unused/node_foundsecret01.lua
++share/aquaria/files/scripts/maps/_unused/node_foundsecret02.lua
++share/aquaria/files/scripts/maps/_unused/node_foundsecret03.lua
++share/aquaria/files/scripts/maps/_unused/node_givealltreasures.lua
++share/aquaria/files/scripts/maps/_unused/node_hint_igfdemo.lua
++share/aquaria/files/scripts/maps/_unused/node_hurtnaija.lua
++share/aquaria/files/scripts/maps/_unused/node_jumptitle.lua
++share/aquaria/files/scripts/maps/_unused/node_killboss.lua
++share/aquaria/files/scripts/maps/_unused/node_mainarea_right.lua
++share/aquaria/files/scripts/maps/_unused/node_memorycrystalscene.lua
++share/aquaria/files/scripts/maps/_unused/node_naija_energybarrier.lua
++share/aquaria/files/scripts/maps/_unused/node_naija_entervedhacave.lua
++share/aquaria/files/scripts/maps/_unused/node_naija_leavesvedha.lua
++share/aquaria/files/scripts/maps/_unused/node_naija_minimap.lua
++share/aquaria/files/scripts/maps/_unused/node_naija_solidenergybarrier.lua
++share/aquaria/files/scripts/maps/_unused/node_prologue.lua
++share/aquaria/files/scripts/maps/_unused/node_pullsong.lua
++share/aquaria/files/scripts/maps/_unused/node_seeompo.lua
++share/aquaria/files/scripts/maps/_unused/node_slowmotest.lua
++share/aquaria/files/scripts/maps/_unused/node_songnotedonetest.lua
++share/aquaria/files/scripts/maps/_unused/node_songsporespawn.lua
++share/aquaria/files/scripts/maps/_unused/node_spawnompo.lua
++share/aquaria/files/scripts/maps/_unused/node_spikes.lua
++share/aquaria/files/scripts/maps/_unused/node_sunkencityboss.lua
++share/aquaria/files/scripts/maps/_unused/node_swimtobg.lua
++share/aquaria/files/scripts/maps/_unused/node_temp_energyboss.lua
++share/aquaria/files/scripts/maps/_unused/node_testwheel.lua
++share/aquaria/files/scripts/maps/_unused/node_thronenormal.lua
++share/aquaria/files/scripts/maps/_unused/node_vedhacave1.lua
++share/aquaria/files/scripts/maps/_unused/node_vision_energytemple.lua
++share/aquaria/files/scripts/maps/_unused/node_waterleveltest.lua
++share/aquaria/files/scripts/maps/_unused/node_whaleorbholder.lua
++share/aquaria/files/scripts/maps/_unused/node_zoomout.lua
++share/aquaria/files/scripts/maps/finalcommon.lua
++share/aquaria/files/scripts/maps/map_energytemple05.lua
++share/aquaria/files/scripts/maps/map_energytemplevision.lua
++share/aquaria/files/scripts/maps/map_eric.lua
++share/aquaria/files/scripts/maps/map_final01.lua
++share/aquaria/files/scripts/maps/map_final02.lua
++share/aquaria/files/scripts/maps/map_final03.lua
++share/aquaria/files/scripts/maps/map_finalboss02.lua
++share/aquaria/files/scripts/maps/map_finalescape.lua
++share/aquaria/files/scripts/maps/map_forest04.lua
++share/aquaria/files/scripts/maps/map_forestvision.lua
++share/aquaria/files/scripts/maps/map_lucien.lua
++share/aquaria/files/scripts/maps/map_mainarea.lua
++share/aquaria/files/scripts/maps/map_mithalas02.lua
++share/aquaria/files/scripts/maps/map_mithalasvision.lua
++share/aquaria/files/scripts/maps/map_naijacave.lua
++share/aquaria/files/scripts/maps/map_secret03.lua
++share/aquaria/files/scripts/maps/map_songcave.lua
++share/aquaria/files/scripts/maps/map_suntemple.lua
++share/aquaria/files/scripts/maps/map_sunvision.lua
++share/aquaria/files/scripts/maps/map_thirteenlair.lua
++share/aquaria/files/scripts/maps/map_vedhacave.lua
++share/aquaria/files/scripts/maps/map_veil01.lua
++share/aquaria/files/scripts/maps/map_veil02.lua
++share/aquaria/files/scripts/maps/node_13encounter.lua
++share/aquaria/files/scripts/maps/node_autogetli.lua
++share/aquaria/files/scripts/maps/node_beacon_energytemple_off.lua
++share/aquaria/files/scripts/maps/node_beacon_forest.lua
++share/aquaria/files/scripts/maps/node_beacon_forest_off.lua
++share/aquaria/files/scripts/maps/node_beacon_homecave.lua
++share/aquaria/files/scripts/maps/node_beacon_homecave_off.lua
++share/aquaria/files/scripts/maps/node_beacon_li.lua
++share/aquaria/files/scripts/maps/node_beacon_mithalas.lua
++share/aquaria/files/scripts/maps/node_beacon_mithalas_off.lua
++share/aquaria/files/scripts/maps/node_beacon_songcave_off.lua
++share/aquaria/files/scripts/maps/node_big-anemone.lua
++share/aquaria/files/scripts/maps/node_clearcontrolhints.lua
++share/aquaria/files/scripts/maps/node_clearnotesonsing.lua
++share/aquaria/files/scripts/maps/node_clicktocook.lua
++share/aquaria/files/scripts/maps/node_closefinaldoor.lua
++share/aquaria/files/scripts/maps/node_collectibleanemoneseed.lua
++share/aquaria/files/scripts/maps/node_collectiblearnassistatue.lua
++share/aquaria/files/scripts/maps/node_collectiblebanner.lua
++share/aquaria/files/scripts/maps/node_collectiblebioseed.lua
++share/aquaria/files/scripts/maps/node_collectibleblackpearl.lua
++share/aquaria/files/scripts/maps/node_collectibleblasteregg.lua
++share/aquaria/files/scripts/maps/node_collectiblechest.lua
++share/aquaria/files/scripts/maps/node_collectibledumboegg.lua
++share/aquaria/files/scripts/maps/node_collectibleenergyboss.lua
++share/aquaria/files/scripts/maps/node_collectibleenergystatue.lua
++share/aquaria/files/scripts/maps/node_collectiblegear.lua
++share/aquaria/files/scripts/maps/node_collectiblejellyplant.lua
++share/aquaria/files/scripts/maps/node_collectiblemithaladoll.lua
++share/aquaria/files/scripts/maps/node_collectiblemithalaspot.lua
++share/aquaria/files/scripts/maps/node_collectiblenaijacave.lua
++share/aquaria/files/scripts/maps/node_collectiblenautilusprime.lua
++share/aquaria/files/scripts/maps/node_collectibleseedbag.lua
++share/aquaria/files/scripts/maps/node_collectibleskull.lua
++share/aquaria/files/scripts/maps/node_collectiblesongcave.lua
++share/aquaria/files/scripts/maps/node_collectiblesporeseed.lua
++share/aquaria/files/scripts/maps/node_collectiblestarfish.lua
++share/aquaria/files/scripts/maps/node_collectiblestonehead.lua
++share/aquaria/files/scripts/maps/node_collectiblesunkey.lua
++share/aquaria/files/scripts/maps/node_collectibletridenthead.lua
++share/aquaria/files/scripts/maps/node_collectibleturtleegg.lua
++share/aquaria/files/scripts/maps/node_collectibleupsidedownseed.lua
++share/aquaria/files/scripts/maps/node_collectiblewalkerbaby.lua
++share/aquaria/files/scripts/maps/node_endofdemo.lua
++share/aquaria/files/scripts/maps/node_energybossslot.lua
++share/aquaria/files/scripts/maps/node_energydoor02.lua
++share/aquaria/files/scripts/maps/node_energydoor03.lua
++share/aquaria/files/scripts/maps/node_energygodencounter.lua
++share/aquaria/files/scripts/maps/node_energypass.lua
++share/aquaria/files/scripts/maps/node_energyslot01.lua
++share/aquaria/files/scripts/maps/node_energyslot02.lua
++share/aquaria/files/scripts/maps/node_energyslot_mainarea.lua
++share/aquaria/files/scripts/maps/node_energytemple01door.lua
++share/aquaria/files/scripts/maps/node_energytemple_firstslot.lua
++share/aquaria/files/scripts/maps/node_enter_abyss.lua
++share/aquaria/files/scripts/maps/node_enter_energytemple.lua
++share/aquaria/files/scripts/maps/node_enter_fishcave.lua
++share/aquaria/files/scripts/maps/node_enter_forest.lua
++share/aquaria/files/scripts/maps/node_enter_forestspritecave.lua
++share/aquaria/files/scripts/maps/node_enter_frozenveil.lua
++share/aquaria/files/scripts/maps/node_enter_homecave.lua
++share/aquaria/files/scripts/maps/node_enter_homewaters.lua
++share/aquaria/files/scripts/maps/node_enter_icecave.lua
++share/aquaria/files/scripts/maps/node_enter_mermogcave.lua
++share/aquaria/files/scripts/maps/node_enter_mithalas.lua
++share/aquaria/files/scripts/maps/node_enter_mithalascathedral.lua
++share/aquaria/files/scripts/maps/node_enter_openwaters.lua
++share/aquaria/files/scripts/maps/node_enter_seahorse.lua
++share/aquaria/files/scripts/maps/node_enter_songcave.lua
++share/aquaria/files/scripts/maps/node_enter_sunkencity.lua
++share/aquaria/files/scripts/maps/node_enter_suntemple.lua
++share/aquaria/files/scripts/maps/node_enter_theveil.lua
++share/aquaria/files/scripts/maps/node_enter_turtlecave.lua
++share/aquaria/files/scripts/maps/node_fallenmithalastatue.lua
++share/aquaria/files/scripts/maps/node_finalbossdeath.lua
++share/aquaria/files/scripts/maps/node_finalrockfall.lua
++share/aquaria/files/scripts/maps/node_fishcave.lua
++share/aquaria/files/scripts/maps/node_fishpass.lua
++share/aquaria/files/scripts/maps/node_forestbossfadeout.lua
++share/aquaria/files/scripts/maps/node_gasp.lua
++share/aquaria/files/scripts/maps/node_hint_beastform1.lua
++share/aquaria/files/scripts/maps/node_hint_beastform2.lua
++share/aquaria/files/scripts/maps/node_hint_bindmermen.lua
++share/aquaria/files/scripts/maps/node_hint_cooking.lua
++share/aquaria/files/scripts/maps/node_hint_dualformchange.lua
++share/aquaria/files/scripts/maps/node_hint_dualformcharge.lua
++share/aquaria/files/scripts/maps/node_hint_energytarget.lua
++share/aquaria/files/scripts/maps/node_hint_healthplant.lua
++share/aquaria/files/scripts/maps/node_hint_healthupgrade.lua
++share/aquaria/files/scripts/maps/node_hint_licombat.lua
++share/aquaria/files/scripts/maps/node_hint_lisong.lua
++share/aquaria/files/scripts/maps/node_hint_minimap.lua
++share/aquaria/files/scripts/maps/node_hint_natureformability.lua
++share/aquaria/files/scripts/maps/node_hint_rollgear.lua
++share/aquaria/files/scripts/maps/node_hint_rollgearagain.lua
++share/aquaria/files/scripts/maps/node_hint_singbulb.lua
++share/aquaria/files/scripts/maps/node_ingredients.lua
++share/aquaria/files/scripts/maps/node_killcreator.lua
++share/aquaria/files/scripts/maps/node_killentity.lua
++share/aquaria/files/scripts/maps/node_kingjellyactivate.lua
++share/aquaria/files/scripts/maps/node_launchoutofsuntemple.lua
++share/aquaria/files/scripts/maps/node_mainarea_energytemple_rock.lua
++share/aquaria/files/scripts/maps/node_mainarea_etenter2.lua
++share/aquaria/files/scripts/maps/node_mainarea_transturtle_rock.lua
++share/aquaria/files/scripts/maps/node_miasecretend.lua
++share/aquaria/files/scripts/maps/node_mithalas.lua
++share/aquaria/files/scripts/maps/node_naija_bindrock.lua
++share/aquaria/files/scripts/maps/node_naija_bindshell.lua
++share/aquaria/files/scripts/maps/node_naija_energyformcharge.lua
++share/aquaria/files/scripts/maps/node_naija_energyformshot.lua
++share/aquaria/files/scripts/maps/node_naija_enterenergytemple.lua
++share/aquaria/files/scripts/maps/node_naija_entersongcave.lua
++share/aquaria/files/scripts/maps/node_naija_forestspritecave.lua
++share/aquaria/files/scripts/maps/node_naija_look.lua
++share/aquaria/files/scripts/maps/node_naija_mithalasend.lua
++share/aquaria/files/scripts/maps/node_naija_openwaters.lua
++share/aquaria/files/scripts/maps/node_naija_returntonormalform.lua
++share/aquaria/files/scripts/maps/node_naija_singing.lua
++share/aquaria/files/scripts/maps/node_naija_songdoor.lua
++share/aquaria/files/scripts/maps/node_naija_speedboost.lua
++share/aquaria/files/scripts/maps/node_normalpass.lua
++share/aquaria/files/scripts/maps/node_npchint.lua
++share/aquaria/files/scripts/maps/node_opendoorfromlamp.lua
++share/aquaria/files/scripts/maps/node_openenergydoor.lua
++share/aquaria/files/scripts/maps/node_openfinaldoor.lua
++share/aquaria/files/scripts/maps/node_opensunkendoor.lua
++share/aquaria/files/scripts/maps/node_pickupgems.lua
++share/aquaria/files/scripts/maps/node_priestbrain.lua
++share/aquaria/files/scripts/maps/node_pushdown.lua
++share/aquaria/files/scripts/maps/node_pushleft.lua
++share/aquaria/files/scripts/maps/node_pushright.lua
++share/aquaria/files/scripts/maps/node_pushup.lua
++share/aquaria/files/scripts/maps/node_savepoint.lua
++share/aquaria/files/scripts/maps/node_seahorserace.lua
++share/aquaria/files/scripts/maps/node_secret01.lua
++share/aquaria/files/scripts/maps/node_secret02.lua
++share/aquaria/files/scripts/maps/node_secret03.lua
++share/aquaria/files/scripts/maps/node_see13firsttime.lua
++share/aquaria/files/scripts/maps/node_seehealthup.lua
++share/aquaria/files/scripts/maps/node_seelibody.lua
++share/aquaria/files/scripts/maps/node_shownote1.lua
++share/aquaria/files/scripts/maps/node_shownote3.lua
++share/aquaria/files/scripts/maps/node_shownote5.lua
++share/aquaria/files/scripts/maps/node_shownote7.lua
++share/aquaria/files/scripts/maps/node_shownote_common.lua
++share/aquaria/files/scripts/maps/node_singinghint.lua
++share/aquaria/files/scripts/maps/node_sit.lua
++share/aquaria/files/scripts/maps/node_sleep.lua
++share/aquaria/files/scripts/maps/node_songcavecrystal.lua
++share/aquaria/files/scripts/maps/node_songdoormural.lua
++share/aquaria/files/scripts/maps/node_spawncrabboss.lua
++share/aquaria/files/scripts/maps/node_spawnli.lua
++share/aquaria/files/scripts/maps/node_spawnmergog.lua
++share/aquaria/files/scripts/maps/node_spawnnautilusprime.lua
++share/aquaria/files/scripts/maps/node_spawnoctomun.lua
++share/aquaria/files/scripts/maps/node_spawnspores.lua
++share/aquaria/files/scripts/maps/node_sunkencityboss2.lua
++share/aquaria/files/scripts/maps/node_sunkencityclosedoor.lua
++share/aquaria/files/scripts/maps/node_sunkencityskip.lua
++share/aquaria/files/scripts/maps/node_suntemple_gear1.lua
++share/aquaria/files/scripts/maps/node_suntemple_gear2.lua
++share/aquaria/files/scripts/maps/node_suntemple_lightcrystal.lua
++share/aquaria/files/scripts/maps/node_sunwormcavebrain.lua
++share/aquaria/files/scripts/maps/node_sunwormpush.lua
++share/aquaria/files/scripts/maps/node_throne.lua
++share/aquaria/files/scripts/maps/node_title.lua
++share/aquaria/files/scripts/maps/node_title_continue.lua
++share/aquaria/files/scripts/maps/node_title_mods.lua
++share/aquaria/files/scripts/maps/node_title_newgame.lua
++share/aquaria/files/scripts/maps/node_title_options.lua
++share/aquaria/files/scripts/maps/node_title_quit.lua
++share/aquaria/files/scripts/maps/node_title_replayintro.lua
++share/aquaria/files/scripts/maps/node_updatemusic.lua
++share/aquaria/files/scripts/maps/node_vision_veil.lua
++share/aquaria/files/scripts/maps/node_whalelamppuzzlebrain.lua
++share/aquaria/files/scripts/maps/node_whaleorbgrab.lua
++share/aquaria/files/scripts/maps/node_whalespawnorb.lua
++share/aquaria/files/scripts/maps/node_zoomoutfar.lua
++share/aquaria/files/scripts/maps/premap_licave.lua
++share/aquaria/files/scripts/maps/premap_mainarea.lua
++share/aquaria/files/scripts/maps/premap_trainingcave.lua
++share/aquaria/files/scripts/maps/premap_veil01.lua
++share/aquaria/files/scripts/maps/premap_veil02.lua
++share/aquaria/game_scripts/
++share/aquaria/game_scripts/_mods/
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/mod-init.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/healthplant.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/nautilus.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_editor.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_editor01.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_editor02.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_editor03.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_end.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_entities01.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_entities02.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_entities03.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_intro.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_nodes01.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_nodes02.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_nodes03.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_nodes04.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_obstruct01.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_obstruct02.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_obstruct03.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_obstruct04.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_obstruct05.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_sit.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_sleep.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit01.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit02.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit03.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit04.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit05.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit06.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit07.lua
++share/aquaria/game_scripts/_mods/aquariaeditortutorial/scripts/node_tileedit08.lua
++share/aquaria/game_scripts/_mods/aquariatemplate/
++share/aquaria/game_scripts/_mods/aquariatemplate/mod-init.lua
++share/aquaria/game_scripts/_mods/aquariatemplate/scripts/
++share/aquaria/game_scripts/_mods/aquariatemplate/scripts/00_starter.lua
++share/aquaria/game_scripts/_mods/guert_mod/
++share/aquaria/game_scripts/_mods/guert_mod/mod-init.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/
++share/aquaria/game_scripts/_mods/guert_mod/scripts/nautilusprime.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_learnbind.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_learnenergy.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_nautilusprimeorbdrop.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_openenergydoor.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_savepoint.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_sit.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/node_sleep.lua
++share/aquaria/game_scripts/_mods/guert_mod/scripts/songs.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/
++share/aquaria/game_scripts/_mods/guert_mod/tempo/00_starter.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/anemone.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/anemone2.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/anemone3.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/anemone4.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/biteymouth.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/empty.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energybarrier.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energybarrierflicker.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energybarrieroff.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energybarriersolid.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energydoor.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energyorb.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/energyorbcracked.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/entityinclude.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/jelly.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/jellysmall.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/nauplius.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/nautilus.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/raspberry.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0001.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0002.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0003.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0004.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0005.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0006.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock0007.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/rock2.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/savepoint.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/seedcommon.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/seedflower.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/singbulb.lua
++share/aquaria/game_scripts/_mods/guert_mod/tempo/songleaf.lua
++share/aquaria/game_scripts/_mods/jukebox/
++share/aquaria/game_scripts/_mods/jukebox/mod-init.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/
++share/aquaria/game_scripts/_mods/jukebox/scripts/jukeboxinclude.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/node_jukebox-next.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/node_jukebox-previous.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/node_jukebox-quit.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/node_jukebox-random.lua
++share/aquaria/game_scripts/_mods/jukebox/scripts/node_jukebox.lua
++share/doc/pkg-readmes/${PKGSTEM}
+Index: pkg/README
+===================================================================
+RCS file: pkg/README
+diff -N pkg/README
+--- /dev/null	1 Jan 1970 00:00:00 -0000
++++ pkg/README	23 Apr 2020 20:46:59 -0000
+@@ -0,0 +1,32 @@
++$OpenBSD: README$
++
+++-------------------------------------------------------------------------------
++| Running ${PKGSTEM} on OpenBSD
+++-------------------------------------------------------------------------------
++
++Aquaria
++=======
++
++To play Aquaria you need the original game assets purshased from GOG or Steam
++or Humble Bundle. After buy it, you can use gogrepo or depotdownloader for
++GOG or Steam respectively to download the game to your computer.
++
++After that, you should create a symlink in your game directory:
++$ cd /path/to/game
++$ ln -s ${PREFIX}/share/${PKGSTEM}/files override
++
++You can start aquaria normally if you are in the game directory, otherwise
++you need to setup an env. variable first:
++$ export AQUARIA_DATA_PATH=/path/to/game
++
++If you have problems with full screen mode (this is the default mode) you
++can disable it by adding <ScreenMode full="0" /> in the <Video> section of
++the file $HOME/.Aquaria/preferences/usersettings.xml
++
++Mods
++----
++If you want to play the default mods you need to do this after you have
++$HOME/.Aquaria (created when you play the first time):
++$ cp -R ${PREFIX}/share/${PKGSTEM}/game_scripts/_mods/* $HOME/.Aquaria/_mods
++
++You can download other mods from the game menu.
